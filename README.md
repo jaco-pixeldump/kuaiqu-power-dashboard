@@ -69,4 +69,4 @@ The above copyright notice and this permission notice shall be included in all c
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
-&copy; 2026 - Proudly done by Marco Fusetti with AI support. mf@etlabora.info
+&copy; 2026 - Proudly developed by Marco Fusetti (AI-assisted). Contact: [mf@etlabora.info](mailto:mf@etlabora.info)
