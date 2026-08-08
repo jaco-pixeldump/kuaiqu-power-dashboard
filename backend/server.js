@@ -81,6 +81,35 @@ app.delete('/api/logs/:filename', (req, res) => {
     }
 });
 
+// Diagnostic endpoints for register testing
+app.get('/api/scan', async (req, res) => {
+    try {
+        const start = parseInt(req.query.start) || 0;
+        const end = parseInt(req.query.end) || 100;
+        const data = await psuService.scanRegisters(start, end);
+        res.json({ success: true, registers: data });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/test-reg', async (req, res) => {
+    try {
+        const { reg, val } = req.body;
+        console.log(`[Test Write] Register ${reg} <= ${val}`);
+        await psuService.enqueueCommand(async () => {
+            await psuService.client.writeRegister(0, 1);
+            await new Promise(r => setTimeout(r, 50));
+            await psuService.client.writeRegister(parseInt(reg), parseInt(val));
+            await new Promise(r => setTimeout(r, 50));
+            await psuService.client.writeRegister(0, 0);
+        });
+        res.json({ success: true, reg, val, message: `Wrote ${val} to register ${reg}` });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 const server = http.createServer(app);
 const io = new Server(server, {
     cors: {
@@ -155,7 +184,8 @@ io.on('connection', (socket) => {
         { evt: 'setStartV', fn: psuService.setStartV.bind(psuService) },
         { evt: 'setEndV', fn: psuService.setEndV.bind(psuService) },
         { evt: 'setBeep', fn: psuService.setBeep.bind(psuService) },
-        { evt: 'setChargeEn', fn: psuService.setChargeEn.bind(psuService) }
+        { evt: 'setChargeEn', fn: psuService.setChargeEn.bind(psuService) },
+        { evt: 'setCurveView', fn: psuService.setCurveView.bind(psuService) }
     ];
 
     advancedEvents.forEach(({ evt, fn }) => {

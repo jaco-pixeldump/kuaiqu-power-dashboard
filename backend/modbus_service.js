@@ -112,10 +112,32 @@ class PowerSupplyService {
         });
     }
 
+    async scanRegisters(start = 0, end = 100) {
+        const results = {};
+        for (let r = start; r <= end; r++) {
+            try {
+                const res = await this.client.readHoldingRegisters(r, 1);
+                if (res.data[0] !== 0) {
+                    results[r] = res.data[0];
+                }
+            } catch (e) {}
+            await delay(15);
+        }
+        console.log("=== Active Device Registers Scan (Non-Zero) ===");
+        console.log(results);
+        console.log("==============================================");
+        return results;
+    }
+
     startPolling() {
         if (this.isPolling) return;
         this.isPolling = true;
         
+        // Scan active registers once on startup
+        this.enqueueCommand(async () => {
+            await this.scanRegisters(0, 100);
+        }).catch(e => console.warn("Scan error:", e.message));
+
         const poll = async () => {
             if (!this.connected) {
                 this.state.deviceConnected = false;
@@ -242,6 +264,23 @@ class PowerSupplyService {
         return this.enqueueCommand(async () => {
             await this.client.writeRegister(REGS.REMOTE, 0);
             console.log("Unlocked front panel");
+        });
+    }
+
+    async setCurveView(show) {
+        return this._executeWithRemote(async () => {
+            const val = show ? 1 : 0;
+            const registersToTry = [71, 72, 74, 77, 78, 80, 84];
+            console.log(`[Modbus] Setting device screen view mode to ${show ? 'Curve/Graph (1)' : 'Numeric (0)'}...`);
+            for (const reg of registersToTry) {
+                try {
+                    await this.client.writeRegister(reg, val);
+                    console.log(`[Modbus] Wrote ${val} to candidate screen register ${reg}`);
+                } catch (err) {
+                    // Ignore unsupported register
+                }
+            }
+            this.state.curveViewOnDevice = show;
         });
     }
 

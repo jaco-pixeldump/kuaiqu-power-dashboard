@@ -221,6 +221,12 @@ function App() {
     fetchServerLogs();
   };
 
+  const toggleShowGraph = () => {
+    const nextState = !showGraph;
+    setShowGraph(nextState);
+    socket.emit('setCurveView', nextState);
+  };
+
   const handleStartLog = () => {
     if (isLogging) return;
     setIsLogging(true);
@@ -228,7 +234,10 @@ function App() {
     setElapsedSeconds(0);
     setLogBuffer([]);
     setViewMode('live');
-    if (!showGraph) setShowGraph(true);
+    if (!showGraph) {
+      setShowGraph(true);
+      socket.emit('setCurveView', true);
+    }
     showToast('Telemetry logging started', 'success');
   };
 
@@ -602,7 +611,7 @@ function App() {
           <div className="flex flex-wrap items-center gap-3">
             {/* Toggle Graph View Button */}
             <button 
-              onClick={() => setShowGraph(!showGraph)}
+              onClick={toggleShowGraph}
               className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors border ${
                 showGraph 
                   ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/50' 
@@ -623,7 +632,7 @@ function App() {
                 <span className={`relative inline-flex rounded-full h-3 w-3 ${(connected && state.deviceConnected) ? 'bg-green-500' : 'bg-red-500'}`}></span>
               </span>
               <span className="text-xs text-gray-400 font-mono">
-                {connected ? (state.deviceConnected ? 'ONLINE' : 'NO HW') : 'OFFLINE'}
+                {(connected && state.deviceConnected) ? 'ONLINE' : 'OFFLINE'}
               </span>
             </div>
           </div>
@@ -636,11 +645,25 @@ function App() {
             {/* Curve Controls & Header Toolbar */}
             <div className="flex flex-wrap items-center justify-between gap-3 mb-3 border-b border-white/10 pb-3">
               
-              <div className="flex items-center gap-3">
+              <div className="flex flex-wrap items-center gap-3">
                 <h3 className="text-xl font-semibold flex items-center gap-2">
                   <Activity size={22} className="text-blue-400"/> 
                   {viewMode === 'loaded' ? 'Loaded Telemetry Log' : 'Output Curve'}
                 </h3>
+
+                {/* Live Voltage & Current Telemetry Badges */}
+                {viewMode === 'live' && (
+                  <div className="flex items-center gap-2 font-mono text-xs">
+                    <div className="flex items-center gap-1.5 bg-blue-500/15 border border-blue-500/40 px-2.5 py-1 rounded-lg">
+                      <span className="text-blue-400 font-bold uppercase">V:</span>
+                      <span className="font-bold text-white tabular-nums">{state.vOut.toFixed(2)} V</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 bg-orange-500/15 border border-orange-500/40 px-2.5 py-1 rounded-lg">
+                      <span className="text-orange-400 font-bold uppercase">I:</span>
+                      <span className="font-bold text-white tabular-nums">{state.iOut.toFixed(3)} A</span>
+                    </div>
+                  </div>
+                )}
 
                 {viewMode === 'loaded' ? (
                   <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/40 px-2.5 py-1 rounded-full font-medium flex items-center gap-1.5">
@@ -807,18 +830,35 @@ function App() {
           {/* Column 1: Controls (Left) */}
           <div className="flex flex-col gap-3 order-2 lg:order-1">
             
-            {/* Output Toggle */}
-            <div className="glass-panel p-3 flex items-center justify-between">
-              <div>
-                <h3 className="text-xl font-semibold mb-1">Output State</h3>
-                <p className="text-gray-400 text-sm">Toggle main power output</p>
+            {/* Combined Card: Output State & Front Panel Control */}
+            <div className="glass-panel p-4 flex flex-col gap-3">
+              {/* Output Toggle Row */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-xl font-semibold mb-1">Output State</h3>
+                  <p className="text-gray-400 text-sm">Toggle main power output</p>
+                </div>
+                <button 
+                  onClick={toggleOutput}
+                  className={`p-4 rounded-full transition-all duration-300 ${state.outputOn ? 'bg-success shadow-[0_0_30px_rgba(34,197,94,0.4)] text-white' : 'bg-surface border border-white/10 text-gray-400 hover:text-white hover:border-white/30'}`}
+                >
+                  <Power size={32} />
+                </button>
               </div>
-              <button 
-                onClick={toggleOutput}
-                className={`p-4 rounded-full transition-all duration-300 ${state.outputOn ? 'bg-success shadow-[0_0_30px_rgba(34,197,94,0.4)] text-white' : 'bg-surface border border-white/10 text-gray-400 hover:text-white hover:border-white/30'}`}
-              >
-                <Power size={32} />
-              </button>
+
+              <div className="h-px w-full bg-white/10 my-1"></div>
+
+              {/* Unlock Front Panel Row */}
+              <div className="flex items-center justify-between">
+                <div>
+                  <h4 className="text-sm font-semibold text-white">Front Panel Lock</h4>
+                  <p className="text-gray-400 text-xs">Unlock local hardware panel</p>
+                </div>
+                <button onClick={handleUnlock} className="btn-secondary text-xs py-2 px-3 flex items-center gap-1.5 border-white/20 hover:bg-white/10">
+                  <Unlock size={15} />
+                  Unlock Front Panel
+                </button>
+              </div>
             </div>
 
             {/* Set Values */}
@@ -983,14 +1023,6 @@ function App() {
 
         </div>
 
-        {/* Footer Actions */}
-        <div className="mt-6 flex justify-end gap-4">
-          <button onClick={handleUnlock} className="btn-secondary flex items-center gap-2">
-            <Unlock size={18} />
-            Unlock Front Panel
-          </button>
-        </div>
-        
         {/* App Footer */}
         <div className="text-center pb-8 pt-6">
           <p className="text-gray-500 text-xs tracking-wide">
