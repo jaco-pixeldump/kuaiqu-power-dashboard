@@ -1,4 +1,4 @@
-#!/media/2t1/html/Kuaiqu-spss-k3010r/wapp/venv/bin/python
+#!./venv/bin/python
 import argparse
 import struct
 import sys
