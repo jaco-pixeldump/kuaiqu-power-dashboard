@@ -31,7 +31,7 @@ out/
 .next/
 
 #logs
-backend/logs
+backend/logs/*
 
 # IDE & Editor folders
 .vscode/
