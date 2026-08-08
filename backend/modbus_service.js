@@ -120,94 +120,87 @@ class PowerSupplyService {
             if (!this.connected) {
                 this.state.deviceConnected = false;
                 if (this.onUpdate) this.onUpdate(this.state);
-                this.isPolling = false;
+                
+                // Attempt automatic reconnect
+                try {
+                    await this.client.connectRTUBuffered(this.port, { baudRate: 9600, parity: 'none', stopBits: 1, dataBits: 8 });
+                    this.client.setTimeout(1000);
+                    this.client.setID(1);
+                    this.connected = true;
+                    console.log(`Reconnected to Modbus on ${this.port}`);
+                } catch (e) {
+                    this.connected = false;
+                }
+                setTimeout(poll, 2000);
                 return;
             }
-            
-            this.state.deviceConnected = true;
             
             try {
                 // Execute queued commands first
                 while (this.commandQueue.length > 0) {
                     const cmd = this.commandQueue.shift();
                     await cmd();
-                    await delay(100); // Small delay after commands
+                    await delay(50);
                 }
-                
-                // Read Output Voltage and Current
-                const vOutRes = await this.client.readHoldingRegisters(REGS.V_OUT, 2);
-                this.state.vOut = Number(registersToFloat(vOutRes.data[0], vOutRes.data[1]).toFixed(3));
-                await delay(30);
-                
-                const iOutRes = await this.client.readHoldingRegisters(REGS.I_OUT, 2);
-                this.state.iOut = Number(registersToFloat(iOutRes.data[0], iOutRes.data[1]).toFixed(3));
-                await delay(30);
-                
-                // Read Settings (V_SET, I_SET)
-                const vSetRes = await this.client.readHoldingRegisters(REGS.V_SET, 2);
-                this.state.vSet = Number(registersToFloat(vSetRes.data[0], vSetRes.data[1]).toFixed(3));
-                await delay(30);
-                
-                const iSetRes = await this.client.readHoldingRegisters(REGS.I_SET, 2);
-                this.state.iSet = Number(registersToFloat(iSetRes.data[0], iSetRes.data[1]).toFixed(3));
-                await delay(30);
-                
-                // Read Status & Output
-                const statRes = await this.client.readHoldingRegisters(REGS.OUTPUT, 1);
-                this.state.outputOn = statRes.data[0] === 1;
-                await delay(30);
-                
-                const workRes = await this.client.readHoldingRegisters(REGS.WORK_STATUS, 1);
-                this.state.workStatus = workRes.data[0];
+
+                // 1. Block Read 0..5 (V_SET, I_SET)
+                try {
+                    const b1 = await this.client.readHoldingRegisters(0, 5);
+                    this.state.vSet = Number(registersToFloat(b1.data[1], b1.data[2]).toFixed(3));
+                    this.state.iSet = Number(registersToFloat(b1.data[3], b1.data[4]).toFixed(3));
+                } catch (e) {
+                    // Ignore single block glitch
+                }
                 await delay(30);
 
-                // Read Protection Limits
-                const ovpRes = await this.client.readHoldingRegisters(REGS.OVP, 2);
-                this.state.ovp = registersToInt32(ovpRes.data[0], ovpRes.data[1]) / 1000.0;
+                // 2. Block Read 27..7 (OUTPUT, V_OUT, I_OUT, WORK_STATUS)
+                try {
+                    const b2 = await this.client.readHoldingRegisters(27, 7);
+                    this.state.outputOn = b2.data[0] === 1;
+                    this.state.vOut = Number(registersToFloat(b2.data[2], b2.data[3]).toFixed(3));
+                    this.state.iOut = Number(registersToFloat(b2.data[4], b2.data[5]).toFixed(3));
+                    this.state.workStatus = b2.data[6];
+                    this.state.deviceConnected = true;
+                } catch (e) {
+                    console.warn("Telemetry Block 2 read error:", e.message);
+                    this.state.deviceConnected = false;
+                }
                 await delay(30);
 
-                const ocpRes = await this.client.readHoldingRegisters(REGS.OCP, 2);
-                this.state.ocp = registersToInt32(ocpRes.data[0], ocpRes.data[1]) / 1000.0;
+                // 3. Block Read 34..10 (OVP_EN, OCP_EN, OVP, OCP, START_V, END_V)
+                try {
+                    const b3 = await this.client.readHoldingRegisters(34, 10);
+                    this.state.ovpEn = b3.data[0] === 1;
+                    this.state.ocpEn = b3.data[1] === 1;
+                    this.state.ovp = registersToInt32(b3.data[2], b3.data[3]) / 1000.0;
+                    this.state.ocp = registersToInt32(b3.data[4], b3.data[5]) / 1000.0;
+                    this.state.startV = registersToInt32(b3.data[6], b3.data[7]) / 1000.0;
+                    this.state.endV = registersToInt32(b3.data[8], b3.data[9]) / 1000.0;
+                } catch (e) {
+                    // Ignore single block glitch
+                }
                 await delay(30);
 
-                const ovpEnRes = await this.client.readHoldingRegisters(REGS.OVP_EN, 1);
-                this.state.ovpEn = ovpEnRes.data[0] === 1;
-                await delay(30);
-
-                const ocpEnRes = await this.client.readHoldingRegisters(REGS.OCP_EN, 1);
-                this.state.ocpEn = ocpEnRes.data[0] === 1;
-                await delay(30);
-
-                // Read Ramps
-                const startVRes = await this.client.readHoldingRegisters(REGS.START_V, 2);
-                this.state.startV = registersToInt32(startVRes.data[0], startVRes.data[1]) / 1000.0;
-                await delay(30);
-
-                const endVRes = await this.client.readHoldingRegisters(REGS.END_V, 2);
-                this.state.endV = registersToInt32(endVRes.data[0], endVRes.data[1]) / 1000.0;
-                await delay(30);
-
-                // Read System states
-                const beepRes = await this.client.readHoldingRegisters(REGS.BEEP, 1);
-                this.state.beep = beepRes.data[0] === 1;
-                await delay(30);
-
-                const chargeEnRes = await this.client.readHoldingRegisters(REGS.CHARGE_EN, 1);
-                this.state.chargeEn = chargeEnRes.data[0] === 1;
-                await delay(30);
-
-                const chargeStatRes = await this.client.readHoldingRegisters(REGS.CHARGE_STATUS, 1);
-                this.state.chargeStatus = chargeStatRes.data[0];
+                // 4. Block Read 75..9 (BEEP, CHARGE_EN, CHARGE_STATUS)
+                try {
+                    const b4 = await this.client.readHoldingRegisters(75, 9);
+                    this.state.beep = b4.data[0] === 1;
+                    this.state.chargeEn = b4.data[1] === 1;
+                    this.state.chargeStatus = b4.data[8];
+                } catch (e) {
+                    // Ignore system block glitch
+                }
                 
                 if (this.onUpdate) {
                     this.onUpdate(this.state);
                 }
                 
             } catch (err) {
-                console.error("Polling error:", err.message);
+                console.error("Polling loop error:", err.message);
+                this.state.deviceConnected = false;
             }
             
-            setTimeout(poll, 1000); // Poll every 1 second
+            setTimeout(poll, 500);
         };
         
         poll();

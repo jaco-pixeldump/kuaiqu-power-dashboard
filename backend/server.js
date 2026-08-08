@@ -2,11 +2,84 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 const psuService = require('./modbus_service');
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+
+const LOGS_DIR = path.join(__dirname, 'logs');
+if (!fs.existsSync(LOGS_DIR)) {
+    fs.mkdirSync(LOGS_DIR, { recursive: true });
+}
+
+// REST Endpoints for Server-Side Telemetry Logs
+app.get('/api/logs', (req, res) => {
+    try {
+        const files = fs.readdirSync(LOGS_DIR).filter(f => f.endsWith('.json'));
+        const logsList = files.map(file => {
+            const filePath = path.join(LOGS_DIR, file);
+            const stats = fs.statSync(filePath);
+            return {
+                filename: file,
+                size: stats.size,
+                created: stats.birthtime || stats.mtime
+            };
+        });
+        // Sort logs from most recent to oldest
+        logsList.sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime());
+        res.json({ success: true, logs: logsList });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/logs', (req, res) => {
+    try {
+        const logData = req.body;
+        if (!logData || (!logData.data && !Array.isArray(logData))) {
+            return res.status(400).json({ success: false, error: 'Invalid log payload' });
+        }
+        const now = new Date();
+        const datePart = now.toISOString().slice(0, 10);
+        const timePart = now.toTimeString().slice(0, 8).replace(/:/g, '-');
+        const filename = req.body.filename || `spss_log_${datePart}_${timePart}.json`;
+        const filePath = path.join(LOGS_DIR, filename);
+        fs.writeFileSync(filePath, JSON.stringify(logData, null, 2), 'utf-8');
+        res.json({ success: true, filename, message: 'Log saved to server successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.get('/api/logs/:filename', (req, res) => {
+    try {
+        const safeName = path.basename(req.params.filename);
+        const filePath = path.join(LOGS_DIR, safeName);
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ success: false, error: 'Log file not found' });
+        }
+        const content = fs.readFileSync(filePath, 'utf-8');
+        res.json(JSON.parse(content));
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.delete('/api/logs/:filename', (req, res) => {
+    try {
+        const safeName = path.basename(req.params.filename);
+        const filePath = path.join(LOGS_DIR, safeName);
+        if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+        }
+        res.json({ success: true, message: 'Log deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 const server = http.createServer(app);
 const io = new Server(server, {
@@ -105,3 +178,4 @@ const PORT = process.env.PORT || 3001;
 server.listen(PORT, () => {
     console.log(`Backend server listening on port ${PORT}`);
 });
+

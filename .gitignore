@@ -30,6 +30,9 @@ out/
 .vercel
 .next/
 
+#logs
+backend/logs
+
 # IDE & Editor folders
 .vscode/
 .idea/
@@ -47,3 +50,5 @@ out/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+
